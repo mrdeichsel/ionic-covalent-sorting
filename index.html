@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ACHS ionic/covalent sorter</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom animations and drag states */
+        @keyframes popIn {
+            0% { transform: scale(0.92); opacity: 0; }
+            70% { transform: scale(1.03); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20% { transform: translateX(-7px); }
+            40% { transform: translateX(7px); }
+            60% { transform: translateX(-5px); }
+            80% { transform: translateX(5px); }
+        }
+
+        @keyframes slideBanner {
+            0% { transform: translateY(-6px); opacity: 0.4; }
+            100% { transform: translateY(0); opacity: 1; }
+        }
+
+        .animate-pop-in {
+            animation: popIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        .animate-shake {
+            animation: shake 0.38s ease-in-out;
+        }
+
+        .animate-banner {
+            animation: slideBanner 0.25s ease-out forwards;
+        }
+
+        .compound-card {
+            touch-action: none; /* Enables smooth custom touch dragging */
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .compound-card.dragging {
+            opacity: 0.45;
+            transform: scale(0.97);
+        }
+
+        .drop-zone-active-ionic {
+            background-color: rgba(238, 242, 255, 0.95) !important;
+            border-color: #4f46e5 !important;
+            box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.18);
+            transform: scale(1.01);
+        }
+
+        .drop-zone-active-covalent {
+            background-color: rgba(240, 253, 250, 0.95) !important;
+            border-color: #0d9488 !important;
+            box-shadow: 0 0 0 4px rgba(13, 148, 136, 0.18);
+            transform: scale(1.01);
+        }
+
+        /* Subtle lab dot grid background */
+        .lab-bg {
+            background-color: #f8fafc;
+            background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+
+        sub {
+            font-size: 0.72em;
+            line-height: 0;
+            position: relative;
+            vertical-align: baseline;
+            bottom: -0.25em;
+        }
+    </style>
+</head>
+<body class="lab-bg text-slate-800 min-h-screen flex flex-col antialiased selection:bg-indigo-100 selection:text-indigo-900">
+
+    <!-- Top Navigation & Status Header -->
+    <header class="bg-white/90 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+            <!-- Brand & Title -->
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-teal-500 flex items-center justify-center text-white shadow-sm">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                    </svg>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 class="text-lg sm:text-xl font-extrabold tracking-tight text-slate-900">ACHS ionic/covalent sorter</h1>
+                        <span id="set-badge" class="px-2.5 py-0.5 text-xs font-bold rounded-full bg-indigo-100 text-indigo-700">Set #1</span>
+                    </div>
+                    <p class="text-xs text-slate-500 hidden sm:block">Classify binary &amp; polyatomic compounds into Ionic or Covalent</p>
+                </div>
+            </div>
+
+            <!-- Controls & Progress Pill -->
+            <div class="flex items-center gap-2 sm:gap-3">
+                <!-- Quick Reference Toggle -->
+                <button id="toggle-guide-btn" type="button" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm font-semibold rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition shadow-xs">
+                    <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>Element Guide</span>
+                </button>
+
+                <!-- Toggle Compound Names -->
+                <button id="toggle-names-btn" type="button" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm font-semibold rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition shadow-xs" title="Show or hide chemical names">
+                    <svg class="w-4 h-4 text-teal-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                    </svg>
+                    <span id="names-btn-label">Names: On</span>
+                </button>
+
+                <!-- Sound Toggle -->
+                <button id="toggle-sound-btn" type="button" class="p-2 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition" title="Toggle sound effects" aria-label="Toggle sound effects">
+                    <svg id="sound-on-icon" class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    </svg>
+                    <svg id="sound-off-icon" class="w-4 h-4 sm:w-5 sm:h-5 hidden text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="w-full bg-slate-100 h-1.5">
+            <div id="progress-bar" class="bg-gradient-to-r from-indigo-600 to-teal-500 h-1.5 transition-all duration-300" style="width: 0%"></div>
+        </div>
+    </header>
+
+    <!-- Collapsible Element Quick Reference Guide -->
+    <section id="element-guide" class="hidden bg-white border-b border-slate-200 shadow-inner">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 py-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div class="p-3.5 rounded-xl bg-indigo-50/70 border border-indigo-200">
+                    <h3 class="font-bold text-indigo-900 flex items-center gap-2 mb-1">
+                        <span class="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
+                        Ionic Rule: Metal + Nonmetal
+                    </h3>
+                    <p class="text-indigo-800 text-xs leading-relaxed mb-2">
+                        Ionic compounds form between a <strong>metal</strong> (left/center of periodic table) and a <strong>nonmetal</strong> (or a nonmetal-containing <strong>polyatomic ion</strong> like NO<sub>3</sub><sup>&minus;</sup>, SO<sub>4</sub><sup>2&minus;</sup>, CO<sub>3</sub><sup>2&minus;</sup>, OH<sup>&minus;</sup>, PO<sub>4</sub><sup>3&minus;</sup>).
+                    </p>
+                    <div class="text-xs text-indigo-900 font-mono bg-white/80 px-2.5 py-1.5 rounded-lg border border-indigo-100">
+                        <strong>Common Metals:</strong> Li, Na, K, Mg, Ca, Sr, Ba, Al, Zn, Ag, Fe, Cu, Pb, Sn, Ni, Co
+                    </div>
+                </div>
+                <div class="p-3.5 rounded-xl bg-teal-50/70 border border-teal-200">
+                    <h3 class="font-bold text-teal-900 flex items-center gap-2 mb-1">
+                        <span class="w-2.5 h-2.5 rounded-full bg-teal-600"></span>
+                        Covalent Rule: All Nonmetals
+                    </h3>
+                    <p class="text-teal-800 text-xs leading-relaxed mb-2">
+                        Covalent (molecular) compounds consist exclusively of <strong>nonmetals</strong> sharing electrons. Look for prefixes like <em>di-</em>, <em>tri-</em>, <em>tetra-</em>, <em>penta-</em>, or <em>hexa-</em>.
+                    </p>
+                    <div class="text-xs text-teal-900 font-mono bg-white/80 px-2.5 py-1.5 rounded-lg border border-teal-100">
+                        <strong>Nonmetals:</strong> H, C, N, O, F, P, S, Cl, Se, Br, I, Xe
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Main Workspace -->
+    <main class="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-5 sm:py-6 flex flex-col gap-5">
+
+        <!-- Live Feedback Banner -->
+        <div id="feedback-banner" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all duration-200 flex items-start sm:items-center justify-between gap-4">
+            <div class="flex items-start sm:items-center gap-3.5">
+                <div id="feedback-icon" class="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
+                    </svg>
+                </div>
+                <div>
+                    <p id="feedback-title" class="text-sm font-bold text-slate-800">Drag each compound into Ionic or Covalent</p>
+                    <p id="feedback-message" class="text-xs sm:text-sm text-slate-600 mt-0.5">
+                        You can also tap a card to select it, then tap a category box below to place it.
+                    </p>
+                </div>
+            </div>
+            <div class="shrink-0 text-right">
+                <span id="progress-text" class="text-sm sm:text-base font-extrabold text-slate-800">0 / 10</span>
+                <span class="block text-[11px] font-medium text-slate-400 uppercase tracking-wider">Sorted</span>
+            </div>
+        </div>
+
+        <!-- Unsorted Compound Bank (10 Cards per Set) -->
+        <section aria-label="Compounds to classify" class="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-5 shadow-sm">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+                    <span>Compound Set</span>
+                    <span id="remaining-pill" class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold">10 remaining</span>
+                </h2>
+                <span class="text-xs text-slate-400 hidden sm:inline">Bank: 45 Ionic &bull; 35 Covalent</span>
+            </div>
+
+            <!-- Card Grid -->
+            <div id="compound-pool" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5 sm:gap-3 min-h-[116px]">
+                <!-- Cards injected dynamically -->
+            </div>
+
+            <!-- Set Complete Celebration Panel (Hidden until 10/10 sorted) -->
+            <div id="set-complete-panel" class="hidden text-center py-6 px-4 animate-pop-in">
+                <div class="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-3 shadow-xs">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                </div>
+                <h3 class="text-xl font-extrabold text-slate-900">Set #<span id="completed-set-num">1</span> Complete!</h3>
+                <p id="set-accuracy-text" class="text-sm text-slate-600 mt-1 max-w-md mx-auto">
+                    Great work! Review your classified compounds and their element breakdowns below, or start a brand-new set.
+                </p>
+                <div class="mt-5 flex flex-wrap items-center justify-center gap-3">
+                    <button id="next-set-btn" type="button" class="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-teal-600 hover:from-indigo-700 hover:to-teal-700 text-white font-bold text-sm shadow-md hover:shadow-lg transition transform active:scale-98 cursor-pointer">
+                        <span>Start Next Set (10 New Compounds)</span>
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Category Drop Zones -->
+        <section class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5 flex-1">
+            
+            <!-- IONIC DROP ZONE -->
+            <div id="zone-ionic" data-category="ionic" class="drop-zone rounded-2xl border-2 border-dashed border-indigo-300 bg-indigo-50/40 p-4 sm:p-5 flex flex-col transition-all duration-200 min-h-[260px] cursor-pointer">
+                <div class="flex items-center justify-between pb-3 mb-3 border-b border-indigo-200/70 pointer-events-none">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-xs">
+                            M<sup class="text-[10px]">+</sup>X<sup class="text-[10px]">&minus;</sup>
+                        </div>
+                        <div>
+                            <h2 class="text-base sm:text-lg font-extrabold text-indigo-950">Ionic Compounds</h2>
+                            <p class="text-xs font-medium text-indigo-700">Contains a metal and a nonmetal</p>
+                        </div>
+                    </div>
+                    <span id="ionic-count" class="px-2.5 py-1 rounded-lg bg-indigo-100 text-indigo-800 text-xs font-bold">0</span>
+                </div>
+
+                <!-- Placeholder prompt when empty -->
+                <div id="ionic-empty-hint" class="flex-1 flex flex-col items-center justify-center text-center py-6 text-indigo-400 pointer-events-none">
+                    <svg class="w-8 h-8 mb-2 opacity-70" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                    </svg>
+                    <p class="text-xs font-semibold">Drop Ionic compounds here</p>
+                    <p class="text-[11px] opacity-80 mt-0.5">(Binary ionic or polyatomic ionic)</p>
+                </div>
+
+                <!-- Sorted Ionic Items List -->
+                <div id="ionic-list" class="flex flex-col gap-2.5"></div>
+            </div>
+
+            <!-- COVALENT DROP ZONE -->
+            <div id="zone-covalent" data-category="covalent" class="drop-zone rounded-2xl border-2 border-dashed border-teal-300 bg-teal-50/40 p-4 sm:p-5 flex flex-col transition-all duration-200 min-h-[260px] cursor-pointer">
+                <div class="flex items-center justify-between pb-3 mb-3 border-b border-teal-200/70 pointer-events-none">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-9 h-9 rounded-xl bg-teal-600 text-white flex items-center justify-center font-bold text-sm shadow-xs">
+                            X&ndash;Y
+                        </div>
+                        <div>
+                            <h2 class="text-base sm:text-lg font-extrabold text-teal-950">Covalent Compounds</h2>
+                            <p class="text-xs font-medium text-teal-700">Contains all nonmetals</p>
+                        </div>
+                    </div>
+                    <span id="covalent-count" class="px-2.5 py-1 rounded-lg bg-teal-100 text-teal-800 text-xs font-bold">0</span>
+                </div>
+
+                <!-- Placeholder prompt when empty -->
+                <div id="covalent-empty-hint" class="flex-1 flex flex-col items-center justify-center text-center py-6 text-teal-500/70 pointer-events-none">
+                    <svg class="w-8 h-8 mb-2 opacity-70" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                    </svg>
+                    <p class="text-xs font-semibold">Drop Covalent compounds here</p>
+                    <p class="text-[11px] opacity-80 mt-0.5">(Binary molecular compounds)</p>
+                </div>
+
+                <!-- Sorted Covalent Items List -->
+                <div id="covalent-list" class="flex flex-col gap-2.5"></div>
+            </div>
+
+        </section>
+    </main>
+
+    <!-- Floating Touch Drag Ghost Container -->
+    <div id="touch-ghost" class="fixed pointer-events-none z-50 hidden opacity-95 transform -translate-x-1/2 -translate-y-1/2 shadow-xl"></div>
+
+    <script>
+        /**
+         * ============================================================================
+         * 1. COMPOUND BANK (35 COVALENT + 45 IONIC = 80 TOTAL COMPOUNDS)
+         * ============================================================================
+         * Every compound includes explicit metal/nonmetal metadata so the feedback
+         * engine can explain *why* a placement is right using the exact chemical
+         * constituents (metal + nonmetal vs. all nonmetals).
+         */
+        const COVALENT_BANK = [
+            { id: 'cov-1', formula: 'CO<sub>2</sub>', name: 'Carbon dioxide', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Carbon (C)', 'Oxygen (O)'] },
+            { id: 'cov-2', formula: 'CO', name: 'Carbon monoxide', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Carbon (C)', 'Oxygen (O)'] },
+            { id: 'cov-3', formula: 'H<sub>2</sub>O', name: 'Dihydrogen monoxide (Water)', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Hydrogen (H)', 'Oxygen (O)'] },
+            { id: 'cov-4', formula: 'NH<sub>3</sub>', name: 'Nitrogen trihydride (Ammonia)', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Nitrogen (N)', 'Hydrogen (H)'] },
+            { id: 'cov-5', formula: 'CH<sub>4</sub>', name: 'Carbon tetrahydride (Methane)', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Carbon (C)', 'Hydrogen (H)'] },
+            { id: 'cov-6', formula: 'SO<sub>2</sub>', name: 'Sulfur dioxide', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Sulfur (S)', 'Oxygen (O)'] },
+            { id: 'cov-7', formula: 'SO<sub>3</sub>', name: 'Sulfur trioxide', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Sulfur (S)', 'Oxygen (O)'] },
+            { id: 'cov-8', formula: 'NO<sub>2</sub>', name: 'Nitrogen dioxide', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Nitrogen (N)', 'Oxygen (O)'] },
+            { id: 'cov-9', formula: 'N<sub>2</sub>O', name: 'Dinitrogen monoxide', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Nitrogen (N)', 'Oxygen (O)'] },
+            { id: 'cov-10', formula: 'N<sub>2</sub>O<sub>4</sub>', name: 'Dinitrogen tetroxide', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Nitrogen (N)', 'Oxygen (O)'] },
+            { id: 'cov-11', formula: 'N<sub>2</sub>O<sub>5</sub>', name: 'Dinitrogen pentoxide', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Nitrogen (N)', 'Oxygen (O)'] },
+            { id: 'cov-12', formula: 'PCl<sub>3</sub>', name: 'Phosphorus trichloride', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Phosphorus (P)', 'Chlorine (Cl)'] },
+            { id: 'cov-13', formula: 'PCl<sub>5</sub>', name: 'Phosphorus pentachloride', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Phosphorus (P)', 'Chlorine (Cl)'] },
+            { id: 'cov-14', formula: 'SF<sub>6</sub>', name: 'Sulfur hexafluoride', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Sulfur (S)', 'Fluorine (F)'] },
+            { id: 'cov-15', formula: 'CCl<sub>4</sub>', name: 'Carbon tetrachloride', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Carbon (C)', 'Chlorine (Cl)'] },
+            { id: 'cov-16', formula: 'CS<sub>2</sub>', name: 'Carbon disulfide', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Carbon (C)', 'Sulfur (S)'] },
+            { id: 'cov-17', formula: 'NF<sub>3</sub>', name: 'Nitrogen trifluoride', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Nitrogen (N)', 'Fluorine (F)'] },
+            { id: 'cov-18', formula: 'OF<sub>2</sub>', name: 'Oxygen difluoride', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Oxygen (O)', 'Fluorine (F)'] },
+            { id: 'cov-19', formula: 'P<sub>4</sub>O<sub>10</sub>', name: 'Tetraphosphorus decoxide', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Phosphorus (P)', 'Oxygen (O)'] },
+            { id: 'cov-20', formula: 'P<sub>2</sub>O<sub>5</sub>', name: 'Diphosphorus pentoxide', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Phosphorus (P)', 'Oxygen (O)'] },
+            { id: 'cov-21', formula: 'SCl<sub>2</sub>', name: 'Sulfur dichloride', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Sulfur (S)', 'Chlorine (Cl)'] },
+            { id: 'cov-22', formula: 'BrF<sub>5</sub>', name: 'Bromine pentafluoride', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Bromine (Br)', 'Fluorine (F)'] },
+            { id: 'cov-23', formula: 'IF<sub>7</sub>', name: 'Iodine heptafluoride', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Iodine (I)', 'Fluorine (F)'] },
+            { id: 'cov-24', formula: 'XeF<sub>4</sub>', name: 'Xenon tetrafluoride', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Xenon (Xe)', 'Fluorine (F)'] },
+            { id: 'cov-25', formula: 'C<sub>2</sub>H<sub>6</sub>', name: 'Dicarbon hexahydride (Ethane)', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Carbon (C)', 'Hydrogen (H)'] },
+            { id: 'cov-26', formula: 'C<sub>3</sub>H<sub>8</sub>', name: 'Tricarbon octahydride (Propane)', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Carbon (C)', 'Hydrogen (H)'] },
+            { id: 'cov-27', formula: 'H<sub>2</sub>O<sub>2</sub>', name: 'Dihydrogen dioxide', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Hydrogen (H)', 'Oxygen (O)'] },
+            { id: 'cov-28', formula: 'N<sub>2</sub>H<sub>4</sub>', name: 'Dinitrogen tetrahydride', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Nitrogen (N)', 'Hydrogen (H)'] },
+            { id: 'cov-29', formula: 'PH<sub>3</sub>', name: 'Phosphorus trihydride', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Phosphorus (P)', 'Hydrogen (H)'] },
+            { id: 'cov-30', formula: 'H<sub>2</sub>S', name: 'Dihydrogen monosulfide', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Hydrogen (H)', 'Sulfur (S)'] },
+            { id: 'cov-31', formula: 'SeO<sub>2</sub>', name: 'Selenium dioxide', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Selenium (Se)', 'Oxygen (O)'] },
+            { id: 'cov-32', formula: 'ClO<sub>2</sub>', name: 'Chlorine dioxide', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Chlorine (Cl)', 'Oxygen (O)'] },
+            { id: 'cov-33', formula: 'BrCl', name: 'Bromine monochloride', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Bromine (Br)', 'Chlorine (Cl)'] },
+            { id: 'cov-34', formula: 'CF<sub>4</sub>', name: 'Carbon tetrafluoride', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Carbon (C)', 'Fluorine (F)'] },
+            { id: 'cov-35', formula: 'SF<sub>4</sub>', name: 'Sulfur tetrafluoride', type: 'covalent', subtype: 'binary-covalent', nonmetals: ['Sulfur (S)', 'Fluorine (F)'] }
+        ];
+
+        const IONIC_BANK = [
+            // 25 Binary Ionic Compounds (Metal + Nonmetal)
+            { id: 'ion-1', formula: 'NaCl', name: 'Sodium chloride', type: 'ionic', subtype: 'binary-ionic', metal: 'Sodium (Na)', nonmetals: ['Chlorine (Cl)'] },
+            { id: 'ion-2', formula: 'KBr', name: 'Potassium bromide', type: 'ionic', subtype: 'binary-ionic', metal: 'Potassium (K)', nonmetals: ['Bromine (Br)'] },
+            { id: 'ion-3', formula: 'LiF', name: 'Lithium fluoride', type: 'ionic', subtype: 'binary-ionic', metal: 'Lithium (Li)', nonmetals: ['Fluorine (F)'] },
+            { id: 'ion-4', formula: 'MgO', name: 'Magnesium oxide', type: 'ionic', subtype: 'binary-ionic', metal: 'Magnesium (Mg)', nonmetals: ['Oxygen (O)'] },
+            { id: 'ion-5', formula: 'CaCl<sub>2</sub>', name: 'Calcium chloride', type: 'ionic', subtype: 'binary-ionic', metal: 'Calcium (Ca)', nonmetals: ['Chlorine (Cl)'] },
+            { id: 'ion-6', formula: 'Al<sub>2</sub>O<sub>3</sub>', name: 'Aluminum oxide', type: 'ionic', subtype: 'binary-ionic', metal: 'Aluminum (Al)', nonmetals: ['Oxygen (O)'] },
+            { id: 'ion-7', formula: 'BaS', name: 'Barium sulfide', type: 'ionic', subtype: 'binary-ionic', metal: 'Barium (Ba)', nonmetals: ['Sulfur (S)'] },
+            { id: 'ion-8', formula: 'Na<sub>2</sub>O', name: 'Sodium oxide', type: 'ionic', subtype: 'binary-ionic', metal: 'Sodium (Na)', nonmetals: ['Oxygen (O)'] },
+            { id: 'ion-9', formula: 'K<sub>3</sub>N', name: 'Potassium nitride', type: 'ionic', subtype: 'binary-ionic', metal: 'Potassium (K)', nonmetals: ['Nitrogen (N)'] },
+            { id: 'ion-10', formula: 'MgBr<sub>2</sub>', name: 'Magnesium bromide', type: 'ionic', subtype: 'binary-ionic', metal: 'Magnesium (Mg)', nonmetals: ['Bromine (Br)'] },
+            { id: 'ion-11', formula: 'CaF<sub>2</sub>', name: 'Calcium fluoride', type: 'ionic', subtype: 'binary-ionic', metal: 'Calcium (Ca)', nonmetals: ['Fluorine (F)'] },
+            { id: 'ion-12', formula: 'SrI<sub>2</sub>', name: 'Strontium iodide', type: 'ionic', subtype: 'binary-ionic', metal: 'Strontium (Sr)', nonmetals: ['Iodine (I)'] },
+            { id: 'ion-13', formula: 'AlCl<sub>3</sub>', name: 'Aluminum chloride', type: 'ionic', subtype: 'binary-ionic', metal: 'Aluminum (Al)', nonmetals: ['Chlorine (Cl)'] },
+            { id: 'ion-14', formula: 'ZnO', name: 'Zinc oxide', type: 'ionic', subtype: 'binary-ionic', metal: 'Zinc (Zn)', nonmetals: ['Oxygen (O)'] },
+            { id: 'ion-15', formula: 'AgCl', name: 'Silver chloride', type: 'ionic', subtype: 'binary-ionic', metal: 'Silver (Ag)', nonmetals: ['Chlorine (Cl)'] },
+            { id: 'ion-16', formula: 'Fe<sub>2</sub>O<sub>3</sub>', name: 'Iron(III) oxide', type: 'ionic', subtype: 'binary-ionic', metal: 'Iron (Fe)', nonmetals: ['Oxygen (O)'] },
+            { id: 'ion-17', formula: 'FeCl<sub>2</sub>', name: 'Iron(II) chloride', type: 'ionic', subtype: 'binary-ionic', metal: 'Iron (Fe)', nonmetals: ['Chlorine (Cl)'] },
+            { id: 'ion-18', formula: 'CuO', name: 'Copper(II) oxide', type: 'ionic', subtype: 'binary-ionic', metal: 'Copper (Cu)', nonmetals: ['Oxygen (O)'] },
+            { id: 'ion-19', formula: 'Cu<sub>2</sub>S', name: 'Copper(I) sulfide', type: 'ionic', subtype: 'binary-ionic', metal: 'Copper (Cu)', nonmetals: ['Sulfur (S)'] },
+            { id: 'ion-20', formula: 'PbO<sub>2</sub>', name: 'Lead(IV) oxide', type: 'ionic', subtype: 'binary-ionic', metal: 'Lead (Pb)', nonmetals: ['Oxygen (O)'] },
+            { id: 'ion-21', formula: 'NiBr<sub>2</sub>', name: 'Nickel(II) bromide', type: 'ionic', subtype: 'binary-ionic', metal: 'Nickel (Ni)', nonmetals: ['Bromine (Br)'] },
+            { id: 'ion-22', formula: 'CoCl<sub>3</sub>', name: 'Cobalt(III) chloride', type: 'ionic', subtype: 'binary-ionic', metal: 'Cobalt (Co)', nonmetals: ['Chlorine (Cl)'] },
+            { id: 'ion-23', formula: 'SnF<sub>4</sub>', name: 'Tin(IV) fluoride', type: 'ionic', subtype: 'binary-ionic', metal: 'Tin (Sn)', nonmetals: ['Fluorine (F)'] },
+            { id: 'ion-24', formula: 'Li<sub>3</sub>P', name: 'Lithium phosphide', type: 'ionic', subtype: 'binary-ionic', metal: 'Lithium (Li)', nonmetals: ['Phosphorus (P)'] },
+            { id: 'ion-25', formula: 'Ba<sub>3</sub>N<sub>2</sub>', name: 'Barium nitride', type: 'ionic', subtype: 'binary-ionic', metal: 'Barium (Ba)', nonmetals: ['Nitrogen (N)'] },
+
+            // 20 Polyatomic Ionic Compounds (Metal + Nonmetals in a Polyatomic Ion)
+            { id: 'ion-26', formula: 'NaOH', name: 'Sodium hydroxide', type: 'ionic', subtype: 'polyatomic-ionic', metal: 'Sodium (Na)', nonmetals: ['Oxygen (O)', 'Hydrogen (H)'], polyatomic: 'hydroxide (OH⁻)' },
+            { id: 'ion-27', formula: 'KOH', name: 'Potassium hydroxide', type: 'ionic', subtype: 'polyatomic-ionic', metal: 'Potassium (K)', nonmetals: ['Oxygen (O)', 'Hydrogen (H)'], polyatomic: 'hydroxide (OH⁻)' },
+            { id: 'ion-28', formula: 'Ca(OH)<sub>2</sub>', name: 'Calcium hydroxide', type: 'ionic', subtype: 'polyatomic-ionic', metal: 'Calcium (Ca)', nonmetals: ['Oxygen (O)', 'Hydrogen (H)'], polyatomic: 'hydroxide (OH⁻)' },
+            { id: 'ion-29', formula: 'NaNO<sub>3</sub>', name: 'Sodium nitrate', type: 'ionic', subtype: 'polyatomic-ionic', metal: 'Sodium (Na)', nonmetals: ['Nitrogen (N)', 'Oxygen (O)'], polyatomic: 'nitrate (NO₃⁻)' },
+            { id: 'ion-30', formula: 'KNO<sub>3</sub>', name: 'Potassium nitrate', type: 'ionic', subtype: 'polyatomic-ionic', metal: 'Potassium (K)', nonmetals: ['Nitrogen (N)', 'Oxygen (O)'], polyatomic: 'nitrate (NO₃⁻)' },
+            { id: 'ion-31', formula: 'Mg(NO<sub>3</sub>)<sub>2</sub>', name: 'Magnesium nitrate', type: 'ionic', subtype: 'polyatomic-ionic', metal: 'Magnesium (Mg)', nonmetals: ['Nitrogen (N)', 'Oxygen (O)'], polyatomic: 'nitrate (NO₃⁻)' },
+            { id: 'ion-32', formula: 'CaCO<sub>3</sub>', name: 'Calcium carbonate', type: 'ionic', subtype: 'polyatomic-ionic', metal: 'Calcium (Ca)', nonmetals: ['Carbon (C)', 'Oxygen (O)'], polyatomic: 'carbonate (CO₃²⁻)' },
+            { id: 'ion-33', formula: 'Na<sub>2</sub>CO<sub>3</sub>', name: 'Sodium carbonate', type: 'ionic', subtype: 'polyatomic-ionic', metal: 'Sodium (Na)', nonmetals: ['Carbon (C)', 'Oxygen (O)'], polyatomic: 'carbonate (CO₃²⁻)' },
+            { id: 'ion-34', formula: 'NaHCO<sub>3</sub>', name: 'Sodium bicarbonate', type: 'ionic', subtype: 'polyatomic-ionic', metal: 'Sodium (Na)', nonmetals: ['Hydrogen (H)', 'Carbon (C)', 'Oxygen (O)'], polyatomic: 'bicarbonate (HCO₃⁻)' },
+            { id: 'ion-35', formula: 'MgSO<sub>4</sub>', name: 'Magnesium sulfate', type: 'ionic', subtype: 'polyatomic-ionic', metal: 'Magnesium (Mg)', nonmetals: ['Sulfur (S)', 'Oxygen (O)'], polyatomic: 'sulfate (SO₄²⁻)' },
+            { id: 'ion-36', formula: 'CuSO<sub>4</sub>', name: 'Copper(II) sulfate', type: 'ionic', subtype: 'polyatomic-ionic', metal: 'Copper (Cu)', nonmetals: ['Sulfur (S)', 'Oxygen (O)'], polyatomic: 'sulfate (SO₄²⁻)' },
+            { id: 'ion-37', formula: 'BaSO<sub>4</sub>', name: 'Barium sulfate', type: 'ionic', subtype: 'polyatomic-ionic', metal: 'Barium (Ba)', nonmetals: ['Sulfur (S)', 'Oxygen (O)'], polyatomic: 'sulfate (SO₄²⁻)' },
+            { id: 'ion-38', formula: 'Al<sub>2</sub>(SO<sub>4</sub>)<sub>3</sub>', name: 'Aluminum sulfate', type: 'ionic', subtype: 'polyatomic-ionic', metal: 'Aluminum (Al)', nonmetals: ['Sulfur (S)', 'Oxygen (O)'], polyatomic: 'sulfate (SO₄²⁻)' },
+            { id: 'ion-39', formula: 'Na<sub>3</sub>PO<sub>4</sub>', name: 'Sodium phosphate', type: 'ionic', subtype: 'polyatomic-ionic', metal: 'Sodium (Na)', nonmetals: ['Phosphorus (P)', 'Oxygen (O)'], polyatomic: 'phosphate (PO₄³⁻)' },
+            { id: 'ion-40', formula: 'Ca<sub>3</sub>(PO<sub>4</sub>)<sub>2</sub>', name: 'Calcium phosphate', type: 'ionic', subtype: 'polyatomic-ionic', metal: 'Calcium (Ca)', nonmetals: ['Phosphorus (P)', 'Oxygen (O)'], polyatomic: 'phosphate (PO₄³⁻)' },
+            { id: 'ion-41', formula: 'KMnO<sub>4</sub>', name: 'Potassium permanganate', type: 'ionic', subtype: 'polyatomic-ionic', metal: 'Potassium (K)', nonmetals: ['Manganese & Oxygen'], polyatomic: 'permanganate (MnO₄⁻)' },
+            { id: 'ion-42', formula: 'NaClO', name: 'Sodium hypochlorite', type: 'ionic', subtype: 'polyatomic-ionic', metal: 'Sodium (Na)', nonmetals: ['Chlorine (Cl)', 'Oxygen (O)'], polyatomic: 'hypochlorite (ClO⁻)' },
+            { id: 'ion-43', formula: 'KClO<sub>3</sub>', name: 'Potassium chlorate', type: 'ionic', subtype: 'polyatomic-ionic', metal: 'Potassium (K)', nonmetals: ['Chlorine (Cl)', 'Oxygen (O)'], polyatomic: 'chlorate (ClO₃⁻)' },
+            { id: 'ion-44', formula: 'Fe(OH)<sub>3</sub>', name: 'Iron(III) hydroxide', type: 'ionic', subtype: 'polyatomic-ionic', metal: 'Iron (Fe)', nonmetals: ['Oxygen (O)', 'Hydrogen (H)'], polyatomic: 'hydroxide (OH⁻)' },
+            { id: 'ion-45', formula: 'Zn(NO<sub>3</sub>)<sub>2</sub>', name: 'Zinc nitrate', type: 'ionic', subtype: 'polyatomic-ionic', metal: 'Zinc (Zn)', nonmetals: ['Nitrogen (N)', 'Oxygen (O)'], polyatomic: 'nitrate (NO₃⁻)' }
+        ];
+
+        /**
+         * ============================================================================
+         * 2. APPLICATION STATE & NON-REPEATING DECK MANAGER
+         * ============================================================================
+         */
+        const state = {
+            setNumber: 1,
+            covalentDeck: [],
+            ionicDeck: [],
+            currentSet: [],          // 10 compound objects for active round
+            placements: new Map(),   // Maps compoundId -> { category, isCorrect }
+            selectedCardId: null,    // Supports tap-to-select + tap-zone interaction
+            showNames: true,
+            soundEnabled: true
+        };
+
+        // Fisher-Yates shuffle helper
+        function shuffleArray(array) {
+            const copy = [...array];
+            for (let i = copy.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [copy[i], copy[j]] = [copy[j], copy[i]];
+            }
+            return copy;
+        }
+
+        // Draw 'count' items from a deck, refilling and shuffling seamlessly when low
+        function drawFromDeck(deckKey, sourceBank, count) {
+            const drawn = [];
+            for (let i = 0; i < count; i++) {
+                if (state[deckKey].length === 0) {
+                    state[deckKey] = shuffleArray(sourceBank);
+                }
+                drawn.push(state[deckKey].pop());
+            }
+            return drawn;
+        }
+
+        /**
+         * ============================================================================
+         * 3. WEB AUDIO SYNTHESIZER (NO EXTERNAL AUDIO URLS)
+         * ============================================================================
+         */
+        let audioCtx = null;
+        function playTone(type) {
+            if (!state.soundEnabled) return;
+            try {
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                if (type === 'correct') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(523.25, now);        // C5
+                    osc.frequency.setValueAtTime(659.25, now + 0.08); // E5
+                    gain.gain.setValueAtTime(0.12, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+                    osc.start(now);
+                    osc.stop(now + 0.25);
+                } else if (type === 'incorrect') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(190, now);
+                    osc.frequency.linearRampToValueAtTime(145, now + 0.2);
+                    gain.gain.setValueAtTime(0.14, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+                    osc.start(now);
+                    osc.stop(now + 0.22);
+                } else if (type === 'complete') {
+                    const notes = [523.25, 659.25, 783.99, 1046.50]; // C5 E5 G5 C6
+                    notes.forEach((freq, idx) => {
+                        const o = audioCtx.createOscillator();
+                        const g = audioCtx.createGain();
+                        o.type = 'sine';
+                        o.connect(g);
+                        g.connect(audioCtx.destination);
+                        o.frequency.setValueAtTime(freq, now + idx * 0.09);
+                        g.gain.setValueAtTime(0.11, now + idx * 0.09);
+                        g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.09 + 0.3);
+                        o.start(now + idx * 0.09);
+                        o.stop(now + idx * 0.09 + 0.3);
+                    });
+                }
+            } catch (e) {
+                // Ignore audio errors if blocked by browser autoplay policy
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 4. FEEDBACK & EXPLANATION GENERATOR
+         * ============================================================================
+         */
+        function getCorrectExplanation(compound) {
+            if (compound.type === 'ionic') {
+                if (compound.subtype === 'polyatomic-ionic') {
+                    return `Contains a <strong>metal</strong> (${compound.metal}) and <strong>nonmetals</strong> (${compound.nonmetals.join(', ')}) in the ${compound.polyatomic} polyatomic ion.`;
+                }
+                return `Contains a <strong>metal</strong> (${compound.metal}) and a <strong>nonmetal</strong> (${compound.nonmetals[0]}).`;
+            } else {
+                return `Contains <strong>all nonmetals</strong> (${compound.nonmetals.join(' and ')}).`;
+            }
+        }
+
+        function getShortBadgeReason(compound) {
+            if (compound.type === 'ionic') {
+                return compound.subtype === 'polyatomic-ionic'
+                    ? `Metal (${compound.metal.split(' ')[0]}) + Nonmetals (${compound.polyatomic})`
+                    : `Metal (${compound.metal.split(' ')[0]}) + Nonmetal (${compound.nonmetals[0].split(' ')[0]})`;
+            }
+            return `All nonmetals (${compound.nonmetals.map(n => n.split(' ')[0]).join(', ')})`;
+        }
+
+        function getIncorrectExplanation(compound) {
+            if (compound.type === 'ionic') {
+                if (compound.subtype === 'polyatomic-ionic') {
+                    return `It is <strong>Ionic</strong> because it contains a <strong>metal</strong> (${compound.metal}) and <strong>nonmetals</strong> (${compound.nonmetals.join(', ')}) in the ${compound.polyatomic} polyatomic ion, not all nonmetals.`;
+                }
+                return `It is <strong>Ionic</strong> because it contains a <strong>metal</strong> (${compound.metal}) and a <strong>nonmetal</strong> (${compound.nonmetals[0]}), not all nonmetals.`;
+            } else {
+                return `It is <strong>Covalent</strong> because it contains <strong>all nonmetals</strong> (${compound.nonmetals.join(' and ')}), with no metal present.`;
+            }
+        }
+
+        function getShortIncorrectReason(compound) {
+            if (compound.type === 'ionic') {
+                return compound.subtype === 'polyatomic-ionic'
+                    ? `Actually Ionic: Metal (${compound.metal.split(' ')[0]}) + Nonmetals (${compound.polyatomic})`
+                    : `Actually Ionic: Metal (${compound.metal.split(' ')[0]}) + Nonmetal (${compound.nonmetals[0].split(' ')[0]})`;
+            }
+            return `Actually Covalent: All nonmetals (${compound.nonmetals.map(n => n.split(' ')[0]).join(', ')})`;
+        }
+
+        function updateFeedbackBanner(mode, titleHtml, messageHtml) {
+            const banner = document.getElementById('feedback-banner');
+            const iconBox = document.getElementById('feedback-icon');
+            const titleEl = document.getElementById('feedback-title');
+            const msgEl = document.getElementById('feedback-message');
+
+            // Reset animation
+            banner.classList.remove('animate-banner');
+            void banner.offsetWidth;
+            banner.classList.add('animate-banner');
+
+            if (mode === 'correct') {
+                banner.className = 'rounded-2xl border-2 border-emerald-400 bg-emerald-50/90 p-4 shadow-sm transition-all duration-200 flex items-start sm:items-center justify-between gap-4 animate-banner';
+                iconBox.className = 'w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 mt-0.5 sm:mt-0';
+                iconBox.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>`;
+                titleEl.className = 'text-sm sm:text-base font-extrabold text-emerald-950';
+                msgEl.className = 'text-xs sm:text-sm text-emerald-900 mt-0.5';
+            } else if (mode === 'incorrect') {
+                banner.className = 'rounded-2xl border-2 border-rose-400 bg-rose-50/90 p-4 shadow-sm transition-all duration-200 flex items-start sm:items-center justify-between gap-4 animate-banner';
+                iconBox.className = 'w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 mt-0.5 sm:mt-0';
+                iconBox.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>`;
+                titleEl.className = 'text-sm sm:text-base font-extrabold text-rose-950';
+                msgEl.className = 'text-xs sm:text-sm text-rose-900 mt-0.5';
+            } else {
+                banner.className = 'rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all duration-200 flex items-start sm:items-center justify-between gap-4';
+                iconBox.className = 'w-10 h-10 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0';
+                iconBox.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" /></svg>`;
+                titleEl.className = 'text-sm font-bold text-slate-800';
+                msgEl.className = 'text-xs sm:text-sm text-slate-600 mt-0.5';
+            }
+
+            titleEl.innerHTML = titleHtml;
+            msgEl.innerHTML = messageHtml;
+        }
+
+        /**
+         * ============================================================================
+         * 5. SET GENERATION & RENDERING
+         * ============================================================================
+         */
+        function startNewSet(isFirstLoad = false) {
+            if (!isFirstLoad) {
+                state.setNumber += 1;
+            }
+
+            // Pick a balanced random split of 4 to 6 covalent and 4 to 6 ionic (total = 10)
+            const covalentCount = Math.floor(Math.random() * 3) + 4; // 4, 5, or 6
+            const ionicCount = 10 - covalentCount;
+
+            const chosenCovalent = drawFromDeck('covalentDeck', COVALENT_BANK, covalentCount);
+            const chosenIonic = drawFromDeck('ionicDeck', IONIC_BANK, ionicCount);
+
+            state.currentSet = shuffleArray([...chosenCovalent, ...chosenIonic]);
+            state.placements.clear();
+            state.selectedCardId = null;
+
+            // Update UI Header & Panels
+            document.getElementById('set-badge').textContent = `Set #${state.setNumber}`;
+            document.getElementById('set-complete-panel').classList.add('hidden');
+            document.getElementById('compound-pool').classList.remove('hidden');
+
+            document.getElementById('ionic-list').innerHTML = '';
+            document.getElementById('covalent-list').innerHTML = '';
+            document.getElementById('ionic-empty-hint').classList.remove('hidden');
+            document.getElementById('covalent-empty-hint').classList.remove('hidden');
+
+            updateCounters();
+            renderCompoundPool();
+            updateFeedbackBanner(
+                'neutral',
+                `Set #${state.setNumber}: Drag each compound into Ionic or Covalent`,
+                'Tip: Check whether the formula starts with a <strong>metal</strong> or contains <strong>all nonmetals</strong>.'
+            );
+        }
+
+        function updateCounters() {
+            const placedCount = state.placements.size;
+            const remainingCount = 10 - placedCount;
+
+            document.getElementById('progress-text').textContent = `${placedCount} / 10`;
+            document.getElementById('progress-bar').style.width = `${placedCount * 10}%`;
+            document.getElementById('remaining-pill').textContent = `${remainingCount} remaining`;
+
+            const ionicPlaced = document.getElementById('ionic-list').children.length;
+            const covalentPlaced = document.getElementById('covalent-list').children.length;
+            document.getElementById('ionic-count').textContent = ionicPlaced;
+            document.getElementById('covalent-count').textContent = covalentPlaced;
+        }
+
+        function renderCompoundPool() {
+            const pool = document.getElementById('compound-pool');
+            pool.innerHTML = '';
+
+            state.currentSet.forEach(compound => {
+                if (state.placements.has(compound.id)) return;
+
+                const isSelected = state.selectedCardId === compound.id;
+                const card = document.createElement('div');
+                card.id = `card-${compound.id}`;
+                card.dataset.id = compound.id;
+                card.setAttribute('draggable', 'true');
+                card.setAttribute('role', 'button');
+                card.setAttribute('tabindex', '0');
+
+                card.className = `compound-card group relative rounded-xl border-2 p-3 flex flex-col items-center justify-center text-center transition-all duration-150 cursor-grab active:cursor-grabbing ${
+                    isSelected
+                        ? 'border-indigo-600 bg-indigo-50/70 ring-4 ring-indigo-500/20 shadow-md -translate-y-0.5'
+                        : 'border-slate-200 bg-white hover:border-indigo-300 hover:shadow-md hover:-translate-y-0.5'
+                }`;
+
+                card.innerHTML = `
+                    <span class="font-mono text-lg sm:text-xl font-bold text-slate-900 tracking-tight pointer-events-none">${compound.formula}</span>
+                    <span class="compound-name-label text-[11px] font-medium text-slate-500 mt-1 line-clamp-1 pointer-events-none ${state.showNames ? '' : 'hidden'}">${compound.name}</span>
+                `;
+
+                // Desktop HTML5 Drag Events
+                card.addEventListener('dragstart', (e) => {
+                    state.selectedCardId = compound.id;
+                    card.classList.add('dragging');
+                    e.dataTransfer.setData('text/plain', compound.id);
+                    e.dataTransfer.effectAllowed = 'move';
+                });
+
+                card.addEventListener('dragend', () => {
+                    card.classList.remove('dragging');
+                    clearDropZoneHighlights();
+                });
+
+                // Click / Keyboard Select Fallback
+                card.addEventListener('click', () => {
+                    state.selectedCardId = (state.selectedCardId === compound.id) ? null : compound.id;
+                    renderCompoundPool();
+                });
+
+                card.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        state.selectedCardId = (state.selectedCardId === compound.id) ? null : compound.id;
+                        renderCompoundPool();
+                    }
+                });
+
+                // Mobile / Tablet Touch Drag Events
+                attachTouchDrag(card, compound);
+
+                pool.appendChild(card);
+            });
+        }
+
+        /**
+         * ============================================================================
+         * 6. CLASSIFICATION & DROP EVALUATION LOGIC
+         * ============================================================================
+         */
+        function handleClassificationAttempt(compoundId, targetCategory) {
+            const compound = state.currentSet.find(c => c.id === compoundId);
+            if (!compound || state.placements.has(compound.id)) return;
+
+            state.selectedCardId = null;
+            const isCorrect = compound.type === targetCategory;
+            state.placements.set(compound.id, { category: targetCategory, isCorrect });
+
+            // Hide empty placeholder in target zone
+            document.getElementById(`${targetCategory}-empty-hint`).classList.add('hidden');
+
+            const listEl = document.getElementById(`${targetCategory}-list`);
+            const placedItem = document.createElement('div');
+            const isIonicZone = targetCategory === 'ionic';
+
+            if (isCorrect) {
+                playTone('correct');
+
+                placedItem.className = `animate-pop-in rounded-xl border p-3 bg-white shadow-xs flex items-center justify-between gap-3 ${
+                    isIonicZone ? 'border-indigo-200' : 'border-teal-200'
+                }`;
+
+                placedItem.innerHTML = `
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div class="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                        </div>
+                        <div class="min-w-0">
+                            <div class="flex items-baseline gap-2 flex-wrap">
+                                <span class="font-mono font-bold text-sm sm:text-base text-slate-900">${compound.formula}</span>
+                                <span class="text-xs text-slate-500 truncate">${compound.name}</span>
+                            </div>
+                            <p class="text-[11px] sm:text-xs font-medium mt-0.5 ${isIonicZone ? 'text-indigo-700' : 'text-teal-700'}">
+                                ${getShortBadgeReason(compound)}
+                            </p>
+                        </div>
+                    </div>
+                    <span class="shrink-0 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide ${
+                        isIonicZone ? 'bg-indigo-50 text-indigo-700' : 'bg-teal-50 text-teal-700'
+                    }">
+                        ${isIonicZone ? (compound.subtype === 'polyatomic-ionic' ? 'Polyatomic' : 'Binary') : 'Covalent'}
+                    </span>
+                `;
+
+                const label = isIonicZone ? 'Ionic' : 'Covalent';
+                updateFeedbackBanner(
+                    'correct',
+                    `Correct! ${compound.formula} (${compound.name}) is ${label}.`,
+                    getCorrectExplanation(compound)
+                );
+            } else {
+                playTone('incorrect');
+
+                placedItem.className = 'animate-pop-in rounded-xl border-2 border-rose-300 p-3 bg-rose-50/40 shadow-xs flex items-center justify-between gap-3';
+
+                placedItem.innerHTML = `
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div class="w-7 h-7 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </div>
+                        <div class="min-w-0">
+                            <div class="flex items-baseline gap-2 flex-wrap">
+                                <span class="font-mono font-bold text-sm sm:text-base text-slate-900">${compound.formula}</span>
+                                <span class="text-xs text-slate-500 truncate">${compound.name}</span>
+                            </div>
+                            <p class="text-[11px] sm:text-xs font-semibold mt-0.5 text-rose-700">
+                                ${getShortIncorrectReason(compound)}
+                            </p>
+                        </div>
+                    </div>
+                    <span class="shrink-0 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide bg-rose-100 text-rose-800">
+                        Incorrect
+                    </span>
+                `;
+
+                const actualLabel = compound.type === 'ionic' ? 'Ionic' : 'Covalent';
+                updateFeedbackBanner(
+                    'incorrect',
+                    `Incorrect — ${compound.formula} (${compound.name}) is ${actualLabel}.`,
+                    getIncorrectExplanation(compound)
+                );
+            }
+
+            listEl.prepend(placedItem);
+            renderCompoundPool();
+            updateCounters();
+
+            // Check if all 10 compounds in this set have been placed
+            if (state.placements.size === 10) {
+                completeCurrentSet();
+            }
+        }
+
+        function completeCurrentSet() {
+            setTimeout(() => playTone('complete'), 180);
+
+            let correctCount = 0;
+            state.placements.forEach(entry => {
+                if (entry.isCorrect) correctCount += 1;
+            });
+
+            document.getElementById('compound-pool').classList.add('hidden');
+            document.getElementById('set-complete-panel').classList.remove('hidden');
+            document.getElementById('completed-set-num').textContent = state.setNumber;
+            document.getElementById('set-accuracy-text').innerHTML =
+                `You got <strong>${correctCount} out of 10 correct</strong>! Review the element explanations below, or start a brand-new set.`;
+        }
+
+        /**
+         * ============================================================================
+         * 7. DESKTOP & TOUCH DRAG-AND-DROP BINDINGS
+         * ============================================================================
+         */
+        function clearDropZoneHighlights() {
+            document.getElementById('zone-ionic').classList.remove('drop-zone-active-ionic');
+            document.getElementById('zone-covalent').classList.remove('drop-zone-active-covalent');
+        }
+
+        function setupDropZones() {
+            const zones = [
+                { el: document.getElementById('zone-ionic'), category: 'ionic', activeClass: 'drop-zone-active-ionic' },
+                { el: document.getElementById('zone-covalent'), category: 'covalent', activeClass: 'drop-zone-active-covalent' }
+            ];
+
+            zones.forEach(({ el, category, activeClass }) => {
+                el.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    el.classList.add(activeClass);
+                });
+
+                el.addEventListener('dragleave', (e) => {
+                    if (!el.contains(e.relatedTarget)) {
+                        el.classList.remove(activeClass);
+                    }
+                });
+
+                el.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    clearDropZoneHighlights();
+                    const compoundId = e.dataTransfer.getData('text/plain') || state.selectedCardId;
+                    if (compoundId) {
+                        handleClassificationAttempt(compoundId, category);
+                    }
+                });
+
+                // Tap-to-place support when a card is selected
+                el.addEventListener('click', () => {
+                    if (state.selectedCardId) {
+                        handleClassificationAttempt(state.selectedCardId, category);
+                    }
+                });
+            });
+        }
+
+        // Smooth touch dragging for phones & tablets
+        function attachTouchDrag(card, compound) {
+            const ghost = document.getElementById('touch-ghost');
+            let isDragging = false;
+            let startX = 0;
+            let startY = 0;
+
+            card.addEventListener('touchstart', (e) => {
+                if (e.touches.length !== 1) return;
+                const touch = e.touches[0];
+                startX = touch.clientX;
+                startY = touch.clientY;
+                isDragging = false;
+            }, { passive: true });
+
+            card.addEventListener('touchmove', (e) => {
+                if (e.touches.length !== 1) return;
+                const touch = e.touches[0];
+                const dx = Math.abs(touch.clientX - startX);
+                const dy = Math.abs(touch.clientY - startY);
+
+                // Start drag after 8px movement threshold so taps still register cleanly
+                if (!isDragging && (dx > 8 || dy > 8)) {
+                    isDragging = true;
+                    card.classList.add('dragging');
+                    ghost.innerHTML = `
+                        <div class="rounded-xl border-2 border-indigo-600 bg-white px-4 py-2.5 text-center shadow-xl">
+                            <span class="font-mono text-lg font-bold text-slate-900">${compound.formula}</span>
+                        </div>
+                    `;
+                    ghost.classList.remove('hidden');
+                }
+
+                if (isDragging) {
+                    e.preventDefault();
+                    ghost.style.left = `${touch.clientX}px`;
+                    ghost.style.top = `${touch.clientY}px`;
+
+                    // Highlight drop zone beneath finger
+                    clearDropZoneHighlights();
+                    const elemBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+                    const zone = elemBelow ? elemBelow.closest('.drop-zone') : null;
+                    if (zone) {
+                        const cat = zone.dataset.category;
+                        zone.classList.add(cat === 'ionic' ? 'drop-zone-active-ionic' : 'drop-zone-active-covalent');
+                    }
+                }
+            }, { passive: false });
+
+            card.addEventListener('touchend', (e) => {
+                if (!isDragging) return;
+                isDragging = false;
+                card.classList.remove('dragging');
+                ghost.classList.add('hidden');
+                clearDropZoneHighlights();
+
+                const touch = e.changedTouches[0];
+                const elemBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+                const zone = elemBelow ? elemBelow.closest('.drop-zone') : null;
+                if (zone) {
+                    handleClassificationAttempt(compound.id, zone.dataset.category);
+                }
+            });
+        }
+
+        /**
+         * ============================================================================
+         * 8. HEADER CONTROLS & INITIALIZATION
+         * ============================================================================
+         */
+        document.addEventListener('DOMContentLoaded', () => {
+            setupDropZones();
+            startNewSet(true);
+
+            // Toggle Element Cheat Sheet
+            const guideBtn = document.getElementById('toggle-guide-btn');
+            const guidePanel = document.getElementById('element-guide');
+            guideBtn.addEventListener('click', () => {
+                guidePanel.classList.toggle('hidden');
+            });
+
+            // Toggle Compound Names visibility
+            const namesBtn = document.getElementById('toggle-names-btn');
+            const namesLabel = document.getElementById('names-btn-label');
+            namesBtn.addEventListener('click', () => {
+                state.showNames = !state.showNames;
+                namesLabel.textContent = state.showNames ? 'Names: On' : 'Names: Off';
+                document.querySelectorAll('.compound-name-label').forEach(el => {
+                    el.classList.toggle('hidden', !state.showNames);
+                });
+            });
+
+            // Toggle Sound Effects
+            const soundBtn = document.getElementById('toggle-sound-btn');
+            soundBtn.addEventListener('click', () => {
+                state.soundEnabled = !state.soundEnabled;
+                document.getElementById('sound-on-icon').classList.toggle('hidden', !state.soundEnabled);
+                document.getElementById('sound-off-icon').classList.toggle('hidden', state.soundEnabled);
+            });
+
+            // Next Set Button
+            document.getElementById('next-set-btn').addEventListener('click', () => {
+                startNewSet(false);
+            });
+        });
+    </script>
+</body>
+</html>
